@@ -2,8 +2,11 @@ import requests
 import os
 import threading
 import time
-from urllib.request import urlretrieve
+# from urllib.request import urlretrieve
+from urllib.parse import urlparse
+import http.client
 
+global is_downloading
 
 def download_file():
     
@@ -18,31 +21,50 @@ def download_file():
     with open(filename, mode="wb") as file:
         file.write(r.content)
 
-
 def print_size():
+    print(f"Скачано {round(os.path.getsize(filename) / 1024 / 1024, 2)} мб")
+
+def output_size():
     while not os.path.exists(filename):
         time.sleep(1) # если файла ещё не существует, ждём 
     
-    current_size = os.path.getsize(filename)
-    while current_size < filesize:
-        print(f"Скачано {round(current_size / 1024 / 1024, 2)} мб")
+    while os.path.getsize(filename) < filesize and is_downloading:
+        print_size()
         time.sleep(1)  
     
-    if current_size == filesize:
-        print(f"Скачано {round(current_size / 1024 / 1024, 2)} мб")
+    if os.path.getsize(filename) == filesize:
+        print_size()
 
 
 url = input("Ссылка на файл: ")
-r = requests.get(url) 
 
-filename = r.url[url.rfind('/')+1:]
+parsed_url = urlparse(url)
+
+conn = http.client.HTTPSConnection(parsed_url.netloc)
+conn.request("GET", parsed_url.path)
+r = conn.getresponse()
+
+filename = url[url.rfind('/')+1:]
 print("Имя файла: ", filename)
 
 filesize = int(r.headers.get('content-length', 0))
 print("Размер файла: ", filesize)
     
-thread = threading.Thread(target=print_size)
-thread.start()
-download_file() 
 
-print_size()
+with open(filename, 'wb') as file:
+    is_downloading = True
+
+    thread = threading.Thread(target=output_size)
+    thread.start()
+
+    while True:
+        chunk = r.read(8192) 
+        if not chunk:
+            break
+        file.write(chunk)
+        
+    # Завершаем скачивание
+    is_downloading = False
+    thread.join()
+
+print_size() # чтобы конечный размер тоже вывелся
